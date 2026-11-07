@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>YouTubeアップ確認</title>
+<style>
+  body { font-family: sans-serif; color: #222; background: #f6f7f9; margin: 0; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
+  .card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .meta { color: #666; font-size: 14px; margin-bottom: 16px; }
+  label { display: block; font-weight: bold; font-size: 14px; margin: 16px 0 6px; }
+  input[type=text], textarea, select { width: 100%; box-sizing: border-box; font-size: 16px; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+  textarea { height: 100px; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  .note { font-size: 13px; color: #666; background: #f1f3f4; border-radius: 8px; padding: 10px; margin-top: 12px; }
+  .btn { display: block; width: 100%; padding: 14px; font-size: 16px; font-weight: bold; color: #fff; background: #d93025; border: 0; border-radius: 8px; margin-top: 24px; cursor: pointer; }
+  .btn.gray { background: #5f6368; }
+  .btn:disabled { background: #aaa; }
+  .msg { margin-top: 16px; font-weight: bold; }
+  .err { color: #d93025; }
+  .chk { font-weight: normal; display: flex; gap: 8px; align-items: flex-start; }
+  a { color: #1a73e8; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap"><div class="card">
+  <div id="loading">読み込み中…</div>
+  <div id="error" class="hide"><h2 id="errTitle"></h2><p id="errLink"></p></div>
+
+  <form id="review" class="hide">
+    <h1>YouTubeにアップ</h1>
+    <div class="meta" id="meta"></div>
+    <a id="play" class="hide" target="_blank" rel="noopener">▶ Zoomで再生して、カット位置を確認する</a>
+    <div class="row">
+      <div><label>開始（時:分:秒）</label><input type="text" name="start" inputmode="numeric"></div>
+      <div><label>終了（時:分:秒）</label><input type="text" name="end" inputmode="numeric"></div>
+    </div>
+    <div class="note" id="note"></div>
+    <label class="chk"><input type="checkbox" name="precise" checked> 1秒単位で正確にカットする（おすすめ。オフにすると速くなりますが、開始位置が数秒〜十数秒ずれることがあります）</label>
+    <label>タイトル</label>
+    <input type="text" name="title" maxlength="100">
+    <label>説明文</label>
+    <textarea name="description"></textarea>
+    <label>公開設定</label>
+    <select name="privacy">
+      <option value="private">非公開</option>
+      <option value="unlisted">限定公開</option>
+      <option value="public">公開</option>
+    </select>
+    <button class="btn" type="submit">この内容でアップする</button>
+    <div class="msg"></div>
+  </form>
+
+  <form id="skip" class="hide">
+    <h2 style="margin-top:0">この録画はアップしませんか？</h2>
+    <p id="skipMeta"></p>
+    <button class="btn gray" type="submit">アップしない</button>
+    <div class="msg"></div>
+  </form>
+</div></div>
+<script>
+  var API = 'https://script.google.com/macros/s/AKfycbzIfMRrA3GIp9Yh-4xsBof1RvcWZAbAR979d0e4EnA64X9UwVauv6cEwS_sS0I0sCpDlQ/exec';
+  var q = new URLSearchParams(location.search);
+  var id = q.get('id') || '', s = q.get('s') || '', mode = q.get('a') === 'skip' ? 'skip' : 'review';
+
+  function show(el) { document.getElementById(el).classList.remove('hide'); }
+  function fail(msg, link) {
+    document.getElementById('loading').classList.add('hide');
+    document.getElementById('errTitle').textContent = msg;
+    if (link) document.getElementById('errLink').innerHTML = '<a href="' + link + '" target="_blank" rel="noopener">YouTube Studioで開く</a>';
+    show('error');
+  }
+
+  // credentials: 'omit' でGoogleのログイン状態を送らない（複数アカウントでも開ける）
+  fetch(API + '?api=get&id=' + encodeURIComponent(id) + '&s=' + encodeURIComponent(s), { credentials: 'omit' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.ok) return fail(d.error, d.videoUrl);
+      document.getElementById('loading').classList.add('hide');
+      var meta = d.topic + '／' + d.when + '／長さ ' + d.duration;
+      if (mode === 'skip') {
+        document.getElementById('skipMeta').textContent = meta;
+        return show('skip');
+      }
+      var f = document.getElementById('review');
+      document.getElementById('meta').textContent = meta;
+      if (d.playUrl) { var a = document.getElementById('play'); a.href = d.playUrl; a.classList.remove('hide'); }
+      f.start.value = d.start; f.end.value = d.end; f.title.value = d.topic;
+      document.getElementById('note').textContent = d.note + '　録画全体：0:00:00 〜 ' + d.duration;
+      show('review');
+    })
+    .catch(function () { fail('読み込みに失敗しました。時間をおいて再度開いてください。'); });
+
+  function send(form, action, payload) {
+    var btn = form.querySelector('button'), m = form.querySelector('.msg');
+    btn.disabled = true; m.className = 'msg'; m.textContent = '送信中…';
+    fetch(API, {
+      method: 'POST', credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: action, form: payload })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) { m.textContent = d.message; btn.textContent = '受け付けました'; }
+        else { m.className = 'msg err'; m.textContent = d.error; btn.disabled = false; }
+      })
+      .catch(function () { m.className = 'msg err'; m.textContent = '送信に失敗しました。もう一度お試しください。'; btn.disabled = false; });
+  }
+
+  document.getElementById('review').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var f = e.target;
+    send(f, 'submit', {
+      id: id, s: s, start: f.start.value, end: f.end.value, precise: f.precise.checked,
+      title: f.title.value, description: f.description.value, privacy: f.privacy.value
+    });
+  });
+  document.getElementById('skip').addEventListener('submit', function (e) {
+    e.preventDefault();
+    send(e.target, 'skip', { id: id, s: s });
+  });
+</script>
+</body>
+</html>
